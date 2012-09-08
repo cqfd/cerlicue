@@ -1,8 +1,10 @@
 -module(cerlicue_tcp_handler_sup).
 -behaviour(supervisor).
 
+-define(SERVER, ?MODULE).
+
 %% API
--export([start_link/0]).
+-export([start_link/0, start_child/0]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -16,7 +18,12 @@
 
 start_link() ->
     {ok, LSock} = gen_tcp:listen(6667, [{reuseaddr, true}]),
-    supervisor:start_link({local, ?MODULE}, ?MODULE, [LSock]).
+    {ok, Pid} = supervisor:start_link({local, ?MODULE}, ?MODULE, [LSock]),
+    start_child(),
+    {ok, Pid}.
+
+start_child() ->
+    supervisor:start_child(?SERVER, []).
 
 %% ===================================================================
 %% Supervisor callbacks

@@ -1,6 +1,4 @@
-
 -module(cerlicue_sup).
-
 -behaviour(supervisor).
 
 %% API
@@ -24,5 +22,11 @@ start_link() ->
 %% ===================================================================
 
 init([]) ->
-    {ok, { {one_for_one, 5, 10}, []} }.
-
+    MaxRestarts = 0,
+    InMaxSeconds = 1,
+    RestartStrategy = {one_for_one, MaxRestarts, InMaxSeconds},
+    TcpSupSpec = {cerlicue_tcp_handler_sup,
+                  {cerlicue_tcp_handler_sup, start_link, []},
+                  permanent, 5000, supervisor,
+                  [cerlicue_tcp_handler_sup]},
+    {ok, {RestartStrategy, [TcpSupSpec]}}.

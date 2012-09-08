@@ -5,4 +5,5 @@
               {applications,[kernel,stdlib]},
               {mod,{cerlicue_app,[]}},
               {env,[]},
-              {modules,[cerlicue_app,cerlicue_sup]}]}.
+              {modules,[cerlicue_app,cerlicue_sup,cerlicue_tcp_handler,
+                        cerlicue_tcp_handler_sup]}]}.
