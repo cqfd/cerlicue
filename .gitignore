@@ -1,2 +1,4 @@
 notes.org
 *.beam
+*.swp
+.#*
