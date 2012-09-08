@@ -1,0 +1,8 @@
+{application,cerlicue,
+             [{description,[]},
+              {vsn,"1"},
+              {registered,[]},
+              {applications,[kernel,stdlib]},
+              {mod,{cerlicue_app,[]}},
+              {env,[]},
+              {modules,[cerlicue_app,cerlicue_sup]}]}.
