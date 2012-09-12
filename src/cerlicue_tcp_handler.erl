@@ -39,7 +39,8 @@ handle_cast(_Msg, State) ->
 
 handle_info(timeout, LSock) ->
     {ok, Sock} = gen_tcp:accept(LSock),
-    {noreply, #state{sock=Sock}}.
+    cerlicue_tcp_handler_sup:start_child(),
+    {noreply, #state{sock=Sock}};
 
 terminate(_Reason, _State) ->
     ok.
