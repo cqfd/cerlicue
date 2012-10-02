@@ -1,6 +1,9 @@
 -module(cerlicue_tcp_handler).
 -behaviour(gen_server).
 
+-define(PING_TIMEOUT, 10 * 1000).
+-define(PING_INTERVAL, 10 * 1000).
+
 -record(s, {sock, incomplete_msg="", idle=false}).
 
 %% ------------------------------------------------------------------
@@ -32,15 +35,23 @@ init([LSock]) ->
     {ok, LSock, Timeout}.
 
 handle_call(_Request, _From, State) ->
-    {reply, ok, State}.
+    {reply, ok, State, ?PING_INTERVAL}.
 
 handle_cast(_Msg, State) ->
-    {noreply, State}.
+    {noreply, State, ?PING_INTERVAL}.
 
 handle_info(timeout, LSock) when is_port(LSock) ->
     {ok, Sock} = gen_tcp:accept(LSock),
     cerlicue_tcp_handler_sup:start_child(),
-    {noreply, #s{sock=Sock}};
+    {noreply, #s{sock=Sock, idle=false}, ?PING_INTERVAL};
+
+handle_info(timeout, State=#s{idle=false}) ->
+    send_ping(State#s.sock),
+    {noreply, State#s{idle=true}, ?PING_TIMEOUT};
+
+handle_info(timeout, State=#s{idle=true}) ->
+    {stop, ping_timeout, State};
+
 handle_info({tcp, _Sock, Data}, State=#s{incomplete_msg=IncompleteMsg}) ->
     case split_by_crlf(Data) of
         {[FirstMsg|RestMsgs], Partial} ->
@@ -51,7 +62,7 @@ handle_info({tcp, _Sock, Data}, State=#s{incomplete_msg=IncompleteMsg}) ->
         {[], Partial} ->
             NewState = State#s{incomplete_msg=IncompleteMsg ++ Partial}
     end,
-    {noreply, NewState};
+    {noreply, NewState, ?PING_INTERVAL};
 handle_info({tcp_closed, _Sock}, State) ->
     {stop, normal, State}.
 
@@ -70,6 +81,10 @@ make_msg_handler(#s{sock=Sock}) ->
             Response = io_lib:format("~p~c~c", [Parsing, $\r, $\n]),
             gen_tcp:send(Sock, Response)
     end.
+
+send_ping(Sock) ->
+    Msg = io_lib:format("PING~c~c", [$\r, $\n]),
+    gen_tcp:send(Sock, Msg).
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
