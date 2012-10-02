@@ -1,7 +1,7 @@
 -module(cerlicue_tcp_handler).
 -behaviour(gen_server).
 
--record(state, {sock, incomplete_msg=""}).
+-record(s, {sock, incomplete_msg="", idle=false}).
 
 %% ------------------------------------------------------------------
 %% API Function Exports
@@ -40,16 +40,16 @@ handle_cast(_Msg, State) ->
 handle_info(timeout, LSock) when is_port(LSock) ->
     {ok, Sock} = gen_tcp:accept(LSock),
     cerlicue_tcp_handler_sup:start_child(),
-    {noreply, #state{sock=Sock}};
-handle_info({tcp, _Sock, Data}, State=#state{incomplete_msg=IncompleteMsg}) ->
+    {noreply, #s{sock=Sock}};
+handle_info({tcp, _Sock, Data}, State=#s{incomplete_msg=IncompleteMsg}) ->
     case split_by_crlf(Data) of
         {[FirstMsg|RestMsgs], Partial} ->
             CompletedMsg = IncompleteMsg ++ FirstMsg,
             Parsings = lists:map(fun cerlicue_parser:parse/1, [CompletedMsg|RestMsgs]),
             lists:foreach(make_msg_handler(State), Parsings),
-            NewState = State#state{incomplete_msg=Partial};
+            NewState = State#s{incomplete_msg=Partial};
         {[], Partial} ->
-            NewState = State#state{incomplete_msg=IncompleteMsg ++ Partial}
+            NewState = State#s{incomplete_msg=IncompleteMsg ++ Partial}
     end,
     {noreply, NewState};
 handle_info({tcp_closed, _Sock}, State) ->
@@ -65,7 +65,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal IRC callbacks
 %% ------------------------------------------------------------------
 
-make_msg_handler(#state{sock=Sock}) ->
+make_msg_handler(#s{sock=Sock}) ->
     fun (Parsing) ->
             Response = io_lib:format("~p~c~c", [Parsing, $\r, $\n]),
             gen_tcp:send(Sock, Response)
