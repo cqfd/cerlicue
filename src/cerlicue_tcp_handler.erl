@@ -37,7 +37,7 @@ handle_call(_Request, _From, State) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-handle_info(timeout, LSock) ->
+handle_info(timeout, LSock) when is_port(LSock) ->
     {ok, Sock} = gen_tcp:accept(LSock),
     cerlicue_tcp_handler_sup:start_child(),
     {noreply, #state{sock=Sock}};
