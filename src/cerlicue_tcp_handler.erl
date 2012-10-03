@@ -109,7 +109,8 @@ split_by_crlf(CrlfSeparatedMsgs) ->
 
 split_by_crlf("", ReversedPartial, Accumulated) ->
     Partial = lists:reverse(ReversedPartial),
-    {lists:reverse(Accumulated), Partial};
+    Messages = lists:reverse(Accumulated),
+    {Messages, Partial};
 split_by_crlf("\r\n" ++ Msg, ReversedPartial, Accumulated) ->
     Complete = lists:reverse(ReversedPartial),
     split_by_crlf(Msg, "", [Complete|Accumulated]);
