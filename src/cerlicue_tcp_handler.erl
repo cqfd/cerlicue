@@ -35,10 +35,10 @@ init([LSock]) ->
     {ok, LSock, Timeout}.
 
 handle_call(_Request, _From, State) ->
-    {reply, ok, State, ?PING_INTERVAL}.
+    {reply, ok, State#s{idle=false}, ?PING_INTERVAL}.
 
 handle_cast(_Msg, State) ->
-    {noreply, State, ?PING_INTERVAL}.
+    {noreply, State#s{idle=false}, ?PING_INTERVAL}.
 
 handle_info(timeout, LSock) when is_port(LSock) ->
     {ok, Sock} = gen_tcp:accept(LSock),
@@ -60,7 +60,7 @@ handle_info({tcp, _Sock, Data}, State=#s{incomplete_msg=IncompleteMsg}) ->
             lists:foreach(make_msg_handler(State), Parsings),
             NewState = State#s{incomplete_msg=Partial};
         {[], Partial} ->
-            NewState = State#s{incomplete_msg=IncompleteMsg ++ Partial}
+            NewState = State#s{incomplete_msg=IncompleteMsg ++ Partial, idle=false}
     end,
     {noreply, NewState, ?PING_INTERVAL};
 handle_info({tcp_closed, _Sock}, State) ->
