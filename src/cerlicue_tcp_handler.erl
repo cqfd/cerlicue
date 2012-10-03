@@ -23,6 +23,8 @@
 %% API Function Definitions
 %% ------------------------------------------------------------------
 
+% Start and link to a new cerlicue_tcp_handler process. This will
+% invoke the init callback.
 start_link(LSock) ->
     gen_server:start_link(?MODULE, [LSock], []).
 
@@ -31,6 +33,12 @@ start_link(LSock) ->
 %% ------------------------------------------------------------------
 
 init([LSock]) ->
+    % Setting a timeout of 0 is an OTP trick. The init function is
+    % invoked within gen_server:start_link and blocks its return; as
+    % such, it may not be an appropriate place to do a lot of slow setup
+    % Setting a timeout of 0 allows init to return immediately, while
+    % giving you a chance to finish your setup within a handle_info
+    % timeout handler.
     Timeout = 0,
     {ok, LSock, Timeout}.
 
@@ -40,15 +48,20 @@ handle_call(_Request, _From, State) ->
 handle_cast(_Msg, State) ->
     {noreply, State#s{idle=false}, ?PING_INTERVAL}.
 
+% This is where we finish setting up a cerlicue_tcp_handler process
+% aftering setting a timeout of 0 in init.
 handle_info(timeout, LSock) when is_port(LSock) ->
     {ok, Sock} = gen_tcp:accept(LSock),
     cerlicue_tcp_handler_sup:start_child(),
     {noreply, #s{sock=Sock, idle=false}, ?PING_INTERVAL};
 
+% If the process hasn't received any messages in ?PING_INTERVAL, send a
+% PING and mark the process as idle.
 handle_info(timeout, State=#s{idle=false}) ->
     send_ping(State#s.sock),
     {noreply, State#s{idle=true}, ?PING_TIMEOUT};
 
+% If the process times out while idle, our last PING went unanswered.
 handle_info(timeout, State=#s{idle=true}) ->
     {stop, ping_timeout, State};
 
