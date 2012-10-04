@@ -1,5 +1,5 @@
 -module(cerlicue_parser).
--export([parse/1]).
+-export([parse/1, unparse/1]).
 
 % Start by trying to parse a prefix.
 parse(":" ++ Msg) ->
@@ -29,7 +29,27 @@ parse(Msg, Prefix) ->
 parse(CommandAndArgs, Prefix, Trail) ->
     case string:tokens(CommandAndArgs, " ") of
         [Command|Args] ->
-            {ok, {Prefix, Command, Args, Trail}};
+            {Prefix, Command, Args, Trail};
         _ ->
             error
     end.
+
+% Convert an IRC parsing back into a string.
+unparse({P, C, As, T}) ->
+    PaddedP = pad_prefix(P),
+    PaddedAs = pad_args(As),
+    PaddedT = pad_trail(T),
+    PaddedP ++ C ++ PaddedAs ++ PaddedT.
+
+pad_prefix("") ->
+    "";
+pad_prefix(P) ->
+    P ++ " ".
+pad_args([]) ->
+    "";
+pad_args(Args) ->
+    " " ++ string:join(Args, " ").
+pad_trail("") ->
+    "";
+pad_trail(T) ->
+    " :" ++ T.
