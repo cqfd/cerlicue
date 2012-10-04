@@ -65,17 +65,25 @@ handle_info(timeout, State=#s{idle=false}) ->
 handle_info(timeout, State=#s{idle=true}) ->
     {stop, ping_timeout, State};
 
-handle_info({tcp, _Sock, Data}, State=#s{incomplete_msg=IncompleteMsg}) ->
+% This is where we read data off the client's socket.
+handle_info({tcp, _Sock, Data}, State=#s{incomplete_msg=PrevIncomplete}) ->
     case split_by_crlf(Data) of
         {[FirstMsg|RestMsgs], Partial} ->
-            CompletedMsg = IncompleteMsg ++ FirstMsg,
-            Parsings = lists:map(fun cerlicue_parser:parse/1, [CompletedMsg|RestMsgs]),
-            lists:foreach(make_msg_handler(State), Parsings),
-            NewState = State#s{incomplete_msg=Partial};
+            FirstCompletedMsg = PrevIncomplete ++ FirstMsg,
+            CompleteMsgs = [FirstCompletedMsg|RestMsgs],
+            Parsings = lists:map(fun cerlicue_parser:parse/1, CompleteMsgs),
+            NewState = State#s{incomplete_msg=Partial, idle=false},
+            case statefully_handle(Parsings, NewState) of
+                {noreply, EvenNewerState} ->
+                    {noreply, EvenNewerState, ?PING_INTERVAL};
+                {stop, Reason, EvenNewerState} ->
+                    {stop, Reason, EvenNewerState}
+            end;
         {[], Partial} ->
-            NewState = State#s{incomplete_msg=IncompleteMsg ++ Partial, idle=false}
-    end,
-    {noreply, NewState, ?PING_INTERVAL};
+            NewState = State#s{incomplete_msg=PrevIncomplete ++ Partial, idle=false},
+            {noreply, NewState, ?PING_INTERVAL}
+    end;
+
 handle_info({tcp_closed, _Sock}, State) ->
     {stop, normal, State}.
 
@@ -89,15 +97,28 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal IRC callbacks
 %% ------------------------------------------------------------------
 
-make_msg_handler(#s{sock=Sock}) ->
-    fun (Parsing) ->
-            Response = io_lib:format("~p~c~c", [Parsing, $\r, $\n]),
-            gen_tcp:send(Sock, Response)
-    end.
+% Root function for handling a particular parsed IRC message. This
+% server will invoke handle_irc_msg/2 on each IRC message it receives.
+handle_irc_msg(State, {_P, "NICK", [Nick], _T}) ->
+    io:format("Hi ~p!~n", [Nick]),
+    {noreply, State};
+handle_irc_msg(State, {_P, "USER", [_Nick, _Mode, _Unused], RealName}) ->
+    io:format("Or rather, hi ~p!~n", [RealName]),
+    {noreply, State};
+handle_irc_msg(State, {_P, "PONG", _As, _T}) ->
+    io:format("Thanks for the PONG!~n"),
+    {noreply, State};
+handle_irc_msg(State, {_Prefix, "QUIT", _Args, _Trail}) ->
+    io:format("Peace out.~n"),
+    {stop, irc_quit, State};
+handle_irc_msg(State, IrcMsg) ->
+    io:format("Handling: ~p~n", [IrcMsg]),
+    {noreply, State}.
 
-send_ping(Sock) ->
-    Msg = io_lib:format("PING~c~c", [$\r, $\n]),
-    gen_tcp:send(Sock, Msg).
+% Use handle_irc_msg/2 to a list of parsed IRC messages. Threads the
+% server's state between calls to keep it updated.
+statefully_handle(Parsings, State) ->
+    statefully_do(fun handle_irc_msg/2, State, Parsings).
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
@@ -116,3 +137,26 @@ split_by_crlf("\r\n" ++ Msg, ReversedPartial, Accumulated) ->
     split_by_crlf(Msg, "", [Complete|Accumulated]);
 split_by_crlf([C|Rest], ReversedPartial, Accumulated) ->
     split_by_crlf(Rest, [C|ReversedPartial], Accumulated).
+
+% statefully_do is an OTP-aware substitute for lists:foreach/2 that
+% threads a state value to each invocation of F. F must return one of
+% the conventional OTP return values.
+statefully_do(_F, State, []) ->
+    {noreply, State};
+statefully_do(F, State, [X|Xs]) ->
+    case F(State, X) of
+        {stop, Reason, NewState} ->
+            {stop, Reason, NewState};
+        {noreply, NewState} ->
+            statefully_do(F, NewState, Xs)
+    end.
+
+send_irc_msg(_Sock, error) ->
+    ok;
+send_irc_msg(Sock, IrcMsg) ->
+    Unparsing = cerlicue_parser:unparse(IrcMsg),
+    Msg = io_lib:format("~s~c~c", [Unparsing, $\r, $\n]),
+    gen_tcp:send(Sock, Msg).
+
+send_ping(Sock) ->
+    send_irc_msg(Sock, {"", "PING", [], ""}).
