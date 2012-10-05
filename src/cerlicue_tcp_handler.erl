@@ -69,16 +69,11 @@ handle_info(timeout, State=#s{idle=true}) ->
 handle_info({tcp, _Sock, Data}, State=#s{incomplete_msg=PrevIncomplete}) ->
     case split_by_crlf(Data) of
         {[FirstMsg|RestMsgs], Partial} ->
-            FirstCompletedMsg = PrevIncomplete ++ FirstMsg,
-            CompleteMsgs = [FirstCompletedMsg|RestMsgs],
-            Parsings = lists:map(fun cerlicue_parser:parse/1, CompleteMsgs),
+            FirstCompleteMsg = PrevIncomplete ++ FirstMsg,
+            CompleteMsgs = [FirstCompleteMsg|RestMsgs],
+            Parsings = [cerlicue_parser:parse(M) || M <- CompleteMsgs],
             NewState = State#s{incomplete_msg=Partial, idle=false},
-            case statefully_handle(Parsings, NewState) of
-                {noreply, EvenNewerState} ->
-                    {noreply, EvenNewerState, ?PING_INTERVAL};
-                {stop, Reason, EvenNewerState} ->
-                    {stop, Reason, EvenNewerState}
-            end;
+            statefully_handle(Parsings, NewState);
         {[], Partial} ->
             NewState = State#s{incomplete_msg=PrevIncomplete ++ Partial, idle=false},
             {noreply, NewState, ?PING_INTERVAL}
@@ -118,7 +113,12 @@ handle_irc_msg(State, IrcMsg) ->
 % Use handle_irc_msg/2 to a list of parsed IRC messages. Threads the
 % server's state between calls to keep it updated.
 statefully_handle(Parsings, State) ->
-    statefully_do(fun handle_irc_msg/2, State, Parsings).
+    case statefully_do(fun handle_irc_msg/2, State, Parsings) of
+        {noreply, NewState} ->
+            {noreply, NewState, ?PING_TIMEOUT};
+        {stop, Reason, NewState} ->
+            {stop, Reason, NewState}
+    end.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
