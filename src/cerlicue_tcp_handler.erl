@@ -4,7 +4,10 @@
 -define(PING_TIMEOUT, 10 * 1000).
 -define(PING_INTERVAL, 10 * 1000).
 
--record(s, {sock, incomplete_msg="", idle=false}).
+-record(s, {sock,
+            nick,
+            incomplete_msg="",
+            idle=false}).
 
 %% ------------------------------------------------------------------
 %% API Function Exports
