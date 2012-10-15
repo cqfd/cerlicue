@@ -1,9 +1,0 @@
-{application,cerlicue,
-             [{description,[]},
-              {vsn,"1"},
-              {registered,[]},
-              {applications,[kernel,stdlib]},
-              {mod,{cerlicue_app,[]}},
-              {env,[]},
-              {modules,[cerlicue_app,cerlicue_parser,cerlicue_sup,
-                        cerlicue_tcp_handler,cerlicue_tcp_handler_sup]}]}.
