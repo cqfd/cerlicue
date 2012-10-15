@@ -2,7 +2,7 @@
 -behaviour(gen_server).
 
 -define(PING_TIMEOUT, 10 * 1000).
--define(PING_INTERVAL, 10 * 1000).
+-define(PING_INTERVAL, 1000 * 1000).
 
 -record(s, {sock,
             nick,
