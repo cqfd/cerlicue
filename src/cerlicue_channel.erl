@@ -27,7 +27,7 @@ join(ChannelPid, ClientPid) ->
     gen_server:call(ChannelPid, {join, ClientPid}).
 
 names(ChannelPid) ->
-    gen_server:call(ChannelPid, who).
+    gen_server:call(ChannelPid, names).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
