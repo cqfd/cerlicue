@@ -1,4 +1,4 @@
 notes.org
-*.beam
+ebin/
 *.swp
 .#*
