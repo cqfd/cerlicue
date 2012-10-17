@@ -1,4 +1,5 @@
 *.org
 ebin/
+*.beam
 *.swp
 .#*
