@@ -7,7 +7,8 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 
--export([start_link/0, register/2, unregister/1, join/2, privmsg/2, names/1]).
+-export([start_link/0, register/2, unregister/1, join/2, privmsg/2,
+         names/1, get_pid/1]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -40,6 +41,9 @@ unregister(Nick) ->
 names(ChannelNick) ->
     gen_server:call(?SERVER, {names, ChannelNick}).
 
+get_pid(Nick) ->
+    gen_server:call(?SERVER, {get_pid, Nick}).
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -59,8 +63,8 @@ handle_call({register, Nick, Pid}, _From, Map) ->
             {reply, ok, NewMap}
     end;
 
-handle_call({privmsg, Nick, Msg}, _From, Map) ->
-    case dict:find(Nick, Map) of
+handle_call({privmsg, ChannelNick="#"++_Nick, Msg}, _From, Map) ->
+    case dict:find(ChannelNick, Map) of
         {ok, Pid} ->
             Pid ! Msg,
             {reply, ok, Map};
@@ -86,6 +90,16 @@ handle_call({names, ChannelNick}, _From, Map) ->
             {reply, cerlicue_channel:names(ChannelPid), Map};
         error ->
             {reply, error, Map}
+    end;
+
+handle_call({get_pid, ChannelNick = "#" ++ _Nick}, _From, Map) ->
+    case dict:find(ChannelNick, Map) of
+        {ok, ChannelPid} ->
+            {reply, {ok, ChannelPid}, Map};
+        error ->
+            {ok, ChannelPid} = cerlicue_channel_sup:start_child(ChannelNick),
+            NewMap = dict:store(ChannelNick, ChannelPid, Map),
+            {reply, {ok, ChannelPid}, NewMap}
     end.
 
 % Callback for unregistering a nick from the router.

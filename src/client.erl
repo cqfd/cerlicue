@@ -53,10 +53,13 @@ handle_call({nick, Nick}, _From, State) ->
             {reply, {error, Reason}, State}
     end;
 
-handle_call({privmsg, Nick, Msg}, _From, State) ->
-    IrcMsg = {self(), 'PRIVMSG', [Nick], Msg},
-    Reply = cerlicue_router:privmsg(Nick, IrcMsg),
+handle_call({privmsg, ChannelNick="#"++_Nick, Msg}, _From, State) ->
+    Reply = cerlicue_channel:privmsg(ChannelNick, Msg, self()),
     {reply, Reply, State};
+
+handle_call({join, Pid, ChannelNick}, _From, _State) ->
+    Reply = cerlicue_channel:join(ChannelNick, Pid),
+    {reply, Reply, _State};
 
 handle_call(quit, _From, State) ->
     {stop, normal, State}.
