@@ -1,5 +1,4 @@
 -module(cerlicue_app).
-
 -behaviour(application).
 
 %% Application callbacks

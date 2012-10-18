@@ -44,7 +44,7 @@ unparse({P, C, As, T}) ->
 pad_prefix("") ->
     "";
 pad_prefix(P) ->
-    P ++ " ".
+    ":" ++ P ++ " ".
 pad_args([]) ->
     "";
 pad_args(Args) ->

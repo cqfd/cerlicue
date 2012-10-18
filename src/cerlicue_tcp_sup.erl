@@ -1,4 +1,4 @@
--module(cerlicue_tcp_handler_sup).
+-module(cerlicue_tcp_sup).
 -behaviour(supervisor).
 
 -define(SERVER, ?MODULE).
@@ -33,8 +33,8 @@ init([LSock]) ->
     MaxRestarts = 0,
     InMaxSeconds = 1,
     RestartStrategy = {simple_one_for_one, MaxRestarts, InMaxSeconds},
-    TcpHandlerSpec = {cerlicue_tcp_handler,
-                      {cerlicue_tcp_handler, start_link, [LSock]},
+    TcpHandlerSpec = {cerlicue_tcp,
+                      {cerlicue_tcp, start_link, [LSock]},
                       temporary, brutal_kill, worker,
-                      [cerlicue_tcp_handler]},
+                      [cerlicue_tcp]},
     {ok, {RestartStrategy, [TcpHandlerSpec]}}.

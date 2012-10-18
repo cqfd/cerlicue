@@ -21,10 +21,8 @@ start_link() ->
 init([]) ->
     MaxRestarts = 0,
     InMaxSeconds = 1,
-    RestartStrategy = {one_for_all, MaxRestarts, InMaxSeconds},
-    RouterSpec = {cerlicue_router, {cerlicue_router, start_link, []},
-                  permanent, 5000, worker, [cerlicue_router]},
-    ChannelSupSpec = {cerlicue_channel_sup, {cerlicue_channel_sup, start_link, []},
-                      permanent, infinity, supervisor,
-                      [cerlicue_channel_sup]},
-    {ok, {RestartStrategy, [RouterSpec, ChannelSupSpec]}}.
+    ServerSpec = {cerlicue_server, {cerlicue_server, start_link, []},
+                  permanent, 5000, worker, [cerlicue_server]},
+    TcpSupSpec = {cerlicue_tcp_sup, {cerlicue_tcp_sup, start_link, []},
+                  permanent, infinity, supervisor, [cerlicue_tcp_sup]},
+    {ok, { {one_for_all, MaxRestarts, InMaxSeconds}, [ServerSpec, TcpSupSpec]} }.

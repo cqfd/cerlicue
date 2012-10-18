@@ -1,5 +1,6 @@
 *.org
 ebin/
+deps/
 *.beam
 *.swp
 .#*

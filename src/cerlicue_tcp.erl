@@ -1,4 +1,4 @@
--module(cerlicue_tcp_handler).
+-module(cerlicue_tcp).
 -behaviour(gen_server).
 
 -define(PING_TIMEOUT, 10 * 1000).
@@ -36,12 +36,6 @@ start_link(LSock) ->
 %% ------------------------------------------------------------------
 
 init([LSock]) ->
-    % Setting a timeout of 0 is an OTP trick. The init function is
-    % invoked within gen_server:start_link and blocks its return; as
-    % such, it may not be an appropriate place to do a lot of slow setup
-    % Setting a timeout of 0 allows init to return immediately, while
-    % giving you a chance to finish your setup within a handle_info
-    % timeout handler.
     Timeout = 0,
     {ok, LSock, Timeout}.
 
@@ -51,24 +45,18 @@ handle_call(_Request, _From, State) ->
 handle_cast(_Msg, State) ->
     {noreply, State#s{idle=false}, ?PING_INTERVAL}.
 
-% This is where we finish setting up a cerlicue_tcp_handler process
-% aftering setting a timeout of 0 in init.
 handle_info(timeout, LSock) when is_port(LSock) ->
     {ok, Sock} = gen_tcp:accept(LSock),
-    cerlicue_tcp_handler_sup:start_child(),
+    cerlicue_tcp_sup:start_child(),
     {noreply, #s{sock=Sock, idle=false}, ?PING_INTERVAL};
 
-% If the process hasn't received any messages in ?PING_INTERVAL, send a
-% PING and mark the process as idle.
 handle_info(timeout, State=#s{idle=false}) ->
     send_ping(State#s.sock),
     {noreply, State#s{idle=true}, ?PING_TIMEOUT};
 
-% If the process times out while idle, our last PING went unanswered.
 handle_info(timeout, State=#s{idle=true}) ->
     {stop, ping_timeout, State};
 
-% This is where we read data off the client's socket.
 handle_info({tcp, _Sock, Data}, State=#s{incomplete_msg=PrevIncomplete}) ->
     case split_by_crlf(Data) of
         {[FirstMsg|RestMsgs], Partial} ->
@@ -83,7 +71,18 @@ handle_info({tcp, _Sock, Data}, State=#s{incomplete_msg=PrevIncomplete}) ->
     end;
 
 handle_info({tcp_closed, _Sock}, State) ->
-    {stop, normal, State}.
+    {stop, normal, State};
+
+handle_info({privmsg, Msg, SenderNick}, State=#s{nick=Nick,sock=Sock}) ->
+    IrcMsg = {SenderNick, "PRIVMSG", [Nick], Msg},
+    send_irc_msg(Sock, IrcMsg),
+    {noreply, State};
+
+handle_info({forward, Msg, SenderNick, Channel},
+            State=#s{sock=Sock}) ->
+    IrcMsg = {SenderNick, "PRIVMSG", [Channel], Msg},
+    send_irc_msg(Sock, IrcMsg),
+    {noreply, State}.
 
 terminate(_Reason, _State) ->
     ok.
@@ -95,39 +94,57 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal IRC callbacks
 %% ------------------------------------------------------------------
 
-% Root function for handling a particular parsed IRC message. This
-% server will invoke handle_irc_msg/2 on each IRC message it receives.
 handle_irc_msg(State, {_P, "NICK", [Nick], _T}) ->
-    io:format("Hi ~p!~n", [Nick]),
-    {noreply, State};
-handle_irc_msg(State, {_P, "USER", [_Nick, _Mode, _Unused], RealName}) ->
-    io:format("Or rather, hi ~p!~n", [RealName]),
-    {noreply, State};
-handle_irc_msg(State, {_P, "PONG", _As, _T}) ->
-    io:format("Thanks for the PONG!~n"),
-    {noreply, State};
-handle_irc_msg(State, {_Prefix, "QUIT", _Args, _Trail}) ->
-    io:format("Peace out.~n"),
-    {stop, irc_quit, State};
-handle_irc_msg(State, IrcMsg) ->
-    io:format("Handling: ~p~n", [IrcMsg]),
-    {noreply, State}.
+    case cerlicue_server:nick(Nick, self()) of
+        ok ->
+            {noreply, State#s{nick=Nick}};
+        {error, Code} ->
+            {stop, {error, Code}, State}
+    end;
 
-% Use handle_irc_msg/2 to a list of parsed IRC messages. Threads the
-% server's state between calls to keep it updated.
-statefully_handle(Parsings, State) ->
-    case statefully_do(fun handle_irc_msg/2, State, Parsings) of
-        {noreply, NewState} ->
-            {noreply, NewState, ?PING_TIMEOUT};
-        {stop, Reason, NewState} ->
-            {stop, Reason, NewState}
-    end.
+handle_irc_msg(State=#s{nick=Nick, sock=Sock},
+               {_P, "USER", [Nick, _Mode, _Unused], _RealName}) ->
+    send_001(Sock, Nick),
+    {noreply, State};
+
+handle_irc_msg(State=#s{nick=Nick, sock=Sock},
+               {_P, "JOIN", [Channel], _T}) ->
+    {ok, OtherNicks} = cerlicue_server:join(Channel, self()),
+    send_join(Sock, Nick, Channel),
+    send_353(Sock, Nick, Channel, OtherNicks),
+    send_366(Sock, Nick, Channel),
+    {noreply, State};
+
+handle_irc_msg(State=#s{nick=Nick, sock=Sock},
+               {_P, "MODE", [Channel], _T}) ->
+    Mode = cerlicue_server:mode(Channel),
+    send_324(Sock, Nick, Channel, Mode),
+    {noreply, State};
+
+handle_irc_msg(State=#s{nick=Nick, sock=Sock},
+               {_P, "PRIVMSG", [Name], Msg}) ->
+    case cerlicue_server:privmsg(Name, Msg, self()) of
+        ok ->
+            {noreply, State};
+        {error, 401} ->
+            send_401(Sock, Nick, Name),
+            {noreply, State};
+        {error, 403} ->
+            send_403(Sock, Nick, Name),
+            {noreply, State}
+    end;
+
+handle_irc_msg(State, {_P, "PONG", _As, _T}) ->
+    {noreply, State};
+
+handle_irc_msg(State,
+               {_Prefix, "QUIT", _Args, _Trail}) ->
+    {stop, irc_quit, State}.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
-% CrlfSeparatedMsgs -> {[Msgs], PartialMsg}
 split_by_crlf(CrlfSeparatedMsgs) ->
     split_by_crlf(CrlfSeparatedMsgs, "", []).
 
@@ -141,9 +158,14 @@ split_by_crlf("\r\n" ++ Msg, ReversedPartial, Accumulated) ->
 split_by_crlf([C|Rest], ReversedPartial, Accumulated) ->
     split_by_crlf(Rest, [C|ReversedPartial], Accumulated).
 
-% statefully_do is an OTP-aware substitute for lists:foreach/2 that
-% threads a state value to each invocation of F. F must return one of
-% the conventional OTP return values.
+statefully_handle(Parsings, State) ->
+    case statefully_do(fun handle_irc_msg/2, State, Parsings) of
+        {noreply, NewState} ->
+            {noreply, NewState, ?PING_INTERVAL};
+        {stop, Reason, NewState} ->
+            {stop, Reason, NewState}
+    end.
+
 statefully_do(_F, State, []) ->
     {noreply, State};
 statefully_do(F, State, [X|Xs]) ->
@@ -154,12 +176,42 @@ statefully_do(F, State, [X|Xs]) ->
             statefully_do(F, NewState, Xs)
     end.
 
+send_ping(Sock) ->
+    send_irc_msg(Sock, {"", "PING", [], ""}).
+
+send_join(Sock, Nick, Channel) ->
+    send_irc_msg(Sock, {Nick, "JOIN", [Channel], ""}).
+
+
+send_001(Sock, Nick) ->
+    send_irc_msg(Sock, {"cerlicue-local", "001", [Nick], "welcome to cerlicue!"}).
+
+send_324(Sock, Nick, Channel, Mode) ->
+    send_irc_msg(Sock, {"cerlicue-local", "324", [Nick, Channel, Mode], ""}).
+
+send_353(Sock, Nick, Channel, OtherNicks) ->
+    send_irc_msg(Sock, {"cerlicue-local",
+                        "353",
+                        [Nick, "=", Channel],
+                        string:join([Nick|OtherNicks], " ")}).
+
+send_366(Sock, Nick, Channel) ->
+    send_irc_msg(Sock, {"cerlicue-local",
+                        "366",
+                        [Nick, Channel],
+                        "End of /NAMES list"}).
+
+send_401(Sock, Nick, NonExistentNick) ->
+    IrcMsg = {"cerlicue-local", "401", [Nick, NonExistentNick], "No such nick"},
+    send_irc_msg(Sock, IrcMsg).
+
+send_403(Sock, Nick, NonExistentChannel) ->
+    IrcMsg = {"cerlicue-local", "401", [Nick, NonExistentChannel], "No such nick"},
+    send_irc_msg(Sock, IrcMsg).
+
 send_irc_msg(_Sock, error) ->
     ok;
 send_irc_msg(Sock, IrcMsg) ->
     Unparsing = cerlicue_parser:unparse(IrcMsg),
     Msg = io_lib:format("~s~c~c", [Unparsing, $\r, $\n]),
     gen_tcp:send(Sock, Msg).
-
-send_ping(Sock) ->
-    send_irc_msg(Sock, {"", "PING", [], ""}).

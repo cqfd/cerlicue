@@ -1,4 +1,4 @@
--module(client).
+-module(cerlicue_test_client).
 -behaviour(gen_server).
 
 -record(s, {nick}).
@@ -7,7 +7,12 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 
--export([start_link/0, nick/2, privmsg/3, join/2, part/2, quit/1]).
+-export([start_link/0,
+         nick/2,
+         privmsg/3,
+         join/2,
+         part/3,
+         quit/1]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -29,14 +34,14 @@ nick(Pid, Nick) ->
 privmsg(Pid, Nick, Msg) ->
     gen_server:call(Pid, {privmsg, Nick, Msg}).
 
-join(Pid, ChannelNick) ->
-    gen_server:call(Pid, {join, Pid, ChannelNick}).
+join(Pid, Channel) ->
+    gen_server:call(Pid, {join, Channel}).
 
-part(Pid, ChannelNick) ->
-    gen_server:call(Pid, {part, Pid, ChannelNick}).
+part(Pid, Channel, Msg) ->
+    gen_server:call(Pid, {part, Channel, Msg}).
 
 quit(Pid) ->
-    gen_server:call(Pid, quit).
+    gen_server:cast(Pid, quit).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -46,40 +51,42 @@ init([]) ->
     {ok, #s{}}.
 
 handle_call({nick, Nick}, _From, State) ->
-    case cerlicue_router:register(Nick, self()) of
+    case cerlicue_server:nick(Nick, self()) of
         ok ->
             {reply, ok, State#s{nick=Nick}};
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
+        {error, Code} ->
+            {reply, {error, Code}, State}
     end;
 
-handle_call({privmsg, ChannelNick="#"++_Nick, Msg}, _From, State) ->
-    Reply = cerlicue_channel:privmsg(ChannelNick, Msg, self()),
+handle_call({privmsg, Nick, Msg}, _From, State) ->
+    Reply = cerlicue_server:privmsg(Nick, Msg, self()),
     {reply, Reply, State};
 
-handle_call({join, Pid, ChannelNick}, _From, _State) ->
-    Reply = cerlicue_channel:join(ChannelNick, Pid),
-    {reply, Reply, _State};
+handle_call({join, Channel}, _From, State) ->
+    Reply = cerlicue_server:join(Channel, self()),
+    {reply, Reply, State};
 
-handle_call(quit, _From, State) ->
+handle_call({part, Channel, Msg}, _From, State) ->
+    Reply = cerlicue_server:part(Channel, self(), Msg),
+    {reply, Reply, State}.
+
+handle_cast(quit, State) ->
     {stop, normal, State}.
 
-handle_cast(_Msg, State) ->
+handle_info({privmsg, Msg, SenderNick}, State) ->
+    io:format("~p ~p~n", [SenderNick, Msg]),
+    {noreply, State};
+
+handle_info({forward, Msg, SenderNick, Channel}, State) ->
+    io:format("~p> ~p ~p~n", [Channel, SenderNick, Msg]),
+    {noreply, State};
+
+handle_info({part, Msg, SenderNick, Channel}, State) ->
+    io:format("~p> part ~p: ~p~n", [Channel, SenderNick, Msg]),
     {noreply, State}.
 
-handle_info(_Info, State) ->
-    io:format("~p received: ~p~n", [self(), _Info]),
-    {noreply, State}.
-
-terminate(_Reason, State) ->
-    io:format("About to terminate ~p~n", [self()]),
-    case State#s.nick of
-        undefined ->
-            ok;
-        Nick ->
-            cerlicue_router:unregister(Nick),
-            ok
-    end.
+terminate(_Reason, _State) ->
+    ok.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
