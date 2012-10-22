@@ -175,7 +175,6 @@ send_ping(Sock) ->
 send_join(Sock, Nick, Channel) ->
     send_irc_msg(Sock, {Nick, "JOIN", [Channel], ""}).
 
-
 send_001(Sock, Nick) ->
     send_irc_msg(Sock, {"cerlicue-local", "001", [Nick], "welcome to cerlicue!"}).
 
