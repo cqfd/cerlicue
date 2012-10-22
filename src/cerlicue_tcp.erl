@@ -58,17 +58,10 @@ handle_info(timeout, State=#s{idle=true}) ->
     {stop, ping_timeout, State};
 
 handle_info({tcp, _Sock, Data}, State=#s{incomplete_msg=PrevIncomplete}) ->
-    case split_by_crlf(Data) of
-        {[FirstMsg|RestMsgs], Partial} ->
-            FirstCompleteMsg = PrevIncomplete ++ FirstMsg,
-            CompleteMsgs = [FirstCompleteMsg|RestMsgs],
-            Parsings = [cerlicue_parser:parse(M) || M <- CompleteMsgs],
-            NewState = State#s{incomplete_msg=Partial, idle=false},
-            statefully_handle(Parsings, NewState);
-        {[], Partial} ->
-            NewState = State#s{incomplete_msg=PrevIncomplete ++ Partial, idle=false},
-            {noreply, NewState, ?PING_INTERVAL}
-    end;
+    {Msgs, Incomplete} = split_by_crlf(PrevIncomplete ++ Data),
+    Parsings = [cerlicue_parser:parse(M) || M <- Msgs],
+    NewState = State#s{incomplete_msg=Incomplete, idle=false},
+    statefully_handle(Parsings, NewState);
 
 handle_info({tcp_closed, _Sock}, State) ->
     {stop, normal, State};
