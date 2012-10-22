@@ -33,7 +33,6 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
-% Try to register a Nick to a Pid.
 nick(Nick, Pid) ->
     gen_server:call(?SERVER, {nick, Nick, Pid}).
 
@@ -64,12 +63,13 @@ handle_call({nick, Nick, Pid},
             {reply, {error, 433}, State};
         error ->
             case dict:find(Pid, Pids) of
-                {ok, _OldNick} ->
-                    ok;
+                {ok, OldNick} ->
+                    NewNicks = dict:store(Nick, Pid,
+                                          dict:erase(OldNick, Nicks));
                 error ->
+                    NewNicks = dict:store(Nick, Pid, Nicks),
                     erlang:monitor(process, Pid)
             end,
-            NewNicks = dict:store(Nick, Pid, Nicks),
             NewPids = dict:store(Pid, Nick, Pids),
             {reply, ok, State#s{nicks=NewNicks, pids=NewPids}}
     end;
