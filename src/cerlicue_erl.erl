@@ -112,5 +112,5 @@ handle_info({quit, Nick, Msg}, connected, State) ->
 terminate(_Reason, _StateName, _State) ->
     ok.
 
-code_change(_OldVsn, _StateName, State, _Extra) ->
-    {ok, State}.
+code_change(_OldVsn, StateName, State, _Extra) ->
+    {ok, StateName, State}.
