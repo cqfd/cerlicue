@@ -2,13 +2,15 @@
 -behaviour(gen_server).
 -define(SERVER, ?MODULE).
 
--record(s, {nicks=dict:new(),
-            channels=dict:new(),
-            pids=dict:new()}).
+-record(s, {nicks=dict:new(),    % nick --> #client{}
+            channels=dict:new(), % channel --> #channel{}
+            pids=dict:new()}).   % pid --> nick
 
--record(ch, {clients=[], topic, mode}).
+-record(channel, {clients=[],    % list of pids
+                  topic}).
 
--record(cl, {pid, mode, realname}).
+-record(client, {pid,
+                 realname}).
 
 %% ------------------------------------------------------------------
 %% API Function Exports
@@ -20,7 +22,6 @@
          privmsg/3,
          join/2,
          part/3,
-         mode/1,
          topic/1,
          topic/2,
          names/1,
@@ -75,9 +76,6 @@ topic(Channel) ->
 % {error, 482} (not a channel operator)
 topic(Channel, NewTopic) ->
     gen_server:call(?SERVER, {topic, Channel, NewTopic}).
-
-mode(Channel) ->
-    gen_server:call(?SERVER, {mode, Channel}).
 
 names(Channel) ->
     gen_server:call(?SERVER, {names, Channel}).
@@ -180,16 +178,6 @@ handle_call({topic, Channel}, _From, State=#s{channels=Channels}) ->
             {reply, errno(403), State}
     end;
 
-% {ok, Mode}
-% {error, 403} (no such channel)
-handle_call({mode, Channel}, _From, State=#s{channels=Channels}) ->
-    case dict:find(Channel, Channels) of
-        {ok, _Clients} ->
-            {reply, {ok, "+ns"}, State};
-        error ->
-            {reply, errno(403), State}
-    end;
-
 % {ok, Nicks}
 % {error, 403} (no such channel)
 handle_call({names, Channel}, _From, State=#s{channels=Channels, pids=Pids}) ->
@@ -203,7 +191,7 @@ handle_call({names, Channel}, _From, State=#s{channels=Channels, pids=Pids}) ->
 
 % ok
 % {error, 403} (no such channel)
-% {error, 442} (not on that channel)
+% {error, 442} (you're not on that channel)
 handle_call({part, Channel, Msg, Client},
             _From,
             State=#s{channels=Channels, pids=Pids}) ->
