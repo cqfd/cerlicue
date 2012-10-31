@@ -1,5 +1,5 @@
 -module(cerlicue_irc_consumer).
--behaviour(gen_server).
+-behaviour(gen_fsm).
 
 -define(HOST, "cerlicue.local").
 
@@ -20,136 +20,149 @@
          quit/1]).
 
 %% ------------------------------------------------------------------
-%% gen_server Function Exports
+%% gen_fsm Function Exports
 %% ------------------------------------------------------------------
 
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
+-export([init/1, handle_event/3, handle_sync_event/4, handle_info/3,
+         terminate/3, code_change/4]).
+
+-export([awaiting_nick/2,
+         connected/2]).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
 %% ------------------------------------------------------------------
 
 start_link(Sock) ->
-    gen_server:start_link(?MODULE, [Sock], []).
-
+    gen_fsm:start_link(?MODULE, [Sock], []).
 nick(Pid, Nick) ->
-    gen_server:cast(Pid, {nick, Nick}).
-
+    gen_fsm:send_event(Pid, {nick, Nick}).
 user(Pid, Nick, Mode, Realname) ->
-    gen_server:cast(Pid, {user, Nick, Mode, Realname}).
-
+    gen_fsm:send_event(Pid, {user, Nick, Mode, Realname}).
 privmsg(Pid, Name, Msg) ->
-    gen_server:cast(Pid, {privmsg, Name, Msg}).
-
+    gen_fsm:send_event(Pid, {privmsg, Name, Msg}).
 join(Pid, Channel) ->
-    gen_server:cast(Pid, {join, Channel}),
+    gen_fsm:send_event(Pid, {join, Channel}),
     topic(Pid, Channel),
     names(Pid, Channel).
-
 part(Pid, Channel, Msg) ->
-    gen_server:cast(Pid, {part, Channel, Msg}).
-
+    gen_fsm:send_event(Pid, {part, Channel, Msg}).
 topic(Pid, Channel) ->
-    gen_server:cast(Pid, {topic, Channel}).
-
+    gen_fsm:send_event(Pid, {topic, Channel}).
 names(Pid, Channel) ->
-    gen_server:cast(Pid, {names, Channel}).
-
+    gen_fsm:send_event(Pid, {names, Channel}).
 quit(Pid) ->
-    gen_server:cast(Pid, quit).
+    gen_fsm:send_event(Pid, quit).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 
 init([Sock]) ->
-    {ok, #s{sock=Sock}}.
+    {ok, awaiting_nick, #s{sock=Sock}}.
 
-handle_call(_Request, _From, State) ->
-    {reply, ok, State}.
-
-handle_cast({nick, Nick}, State=#s{sock=Sock}) ->
+awaiting_nick({nick, Nick}, State=#s{sock=Sock}) ->
     case cerlicue_backend:nick(Nick, self()) of
         ok ->
-            {noreply, State#s{nick=Nick}};
+            {next_state, connected, State#s{nick=Nick}};
+        {error, 432} ->
+            send_irc(Sock, ?HOST, "432", [Nick], "Nickname invalid"),
+            {next_state, awaiting_nick, State};
         {error, 433} ->
             send_irc(Sock, ?HOST, "433", [Nick], "Nickname already in use"),
-            {noreply, State}
+            {next_state, awaiting_nick, State}
     end;
-handle_cast({user, Nick, _Mode, _Realname}, State=#s{sock=Sock}) ->
+awaiting_nick(_Req, State=#s{sock=Sock}) ->
+    send_irc(Sock, ?HOST, "451", ["*"], "Register first!"),
+    {next_state, awaiting_nick, State}.
+
+connected({nick, Nick}, State=#s{sock=Sock}) ->
+    case cerlicue_backend:nick(Nick, self()) of
+        ok ->
+            {next_state, connected, State#s{nick=Nick}};
+        {error, 433} ->
+            send_irc(Sock, ?HOST, "433", [Nick], "Nickname already in use"),
+            {next_state, connected, State}
+    end;
+connected({user, Nick, _Mode, _Realname}, State=#s{sock=Sock}) ->
     send_irc(Sock, ?HOST, "001", [Nick], "Welcome to cerlicue!"),
-    {noreply, State};
-handle_cast({privmsg, Name, Msg}, State=#s{sock=Sock}) ->
+    {next_state, connected, State};
+connected({privmsg, Name, Msg}, State=#s{sock=Sock, nick=Nick}) ->
     case cerlicue_backend:privmsg(Name, Msg, self()) of
         ok ->
-            {noreply, State};
+            {next_state, connected, State};
         {error, 401} ->
-            send_irc(Sock, ?HOST, "401", [Name], "No such nick!"),
-            {noreply, State};
+            send_irc(Sock, ?HOST, "401", [Nick, Name], "No such nick!"),
+            {next_state, connected, State};
         {error, 403} ->
-            send_irc(Sock, ?HOST, "403", [Name], "No such channel!"),
-            {noreply, State}
+            send_irc(Sock, ?HOST, "403", [Nick, Name], "No such channel!"),
+            {next_state, connected, State}
     end;
-handle_cast({join, Channel}, State=#s{sock=Sock, nick=Nick}) ->
+connected({join, Channel}, State=#s{sock=Sock, nick=Nick}) ->
     cerlicue_backend:join(Channel, self()),
     send_irc(Sock, Nick, "JOIN", [Channel], ""),
-    {noreply, State};
-handle_cast({topic, Channel}, State=#s{sock=Sock, nick=Nick}) ->
+    {next_state, connected, State};
+connected({topic, Channel}, State=#s{sock=Sock, nick=Nick}) ->
     case cerlicue_backend:topic(Channel) of
         {ok, Topic} ->
             send_irc(Sock, ?HOST, "332", [Nick, Channel], Topic),
-            {noreply, State};
+            {next_state, connected, State};
         {error, 403} ->
             send_irc(Sock, ?HOST, "403", [Channel], "No such channel!"),
-            {noreply, State}
+            {next_state, connected, State}
     end;
-handle_cast({names, Channel}, State=#s{sock=Sock, nick=Nick}) ->
+connected({names, Channel}, State=#s{sock=Sock, nick=Nick}) ->
     case cerlicue_backend:names(Channel) of
         {ok, Names} ->
             send_irc(Sock, ?HOST, "353", [Nick, "=", Channel], string:join(Names, " ")),
             send_irc(Sock, ?HOST, "366", [Nick, Channel], "End of /NAMES list."),
-            {noreply, State};
+            {next_state, connected, State};
         {error, 403} ->
             send_irc(Sock, ?HOST, "403", [Channel], "No such channel!"),
-            {noreply, State}
+            {next_state, connected, State}
     end;
-handle_cast({part, Nick, Channel, Msg}, State=#s{sock=Sock}) ->
+connected({part, Nick, Channel, Msg}, State=#s{sock=Sock}) ->
     case cerlicue_backend:part(Channel, Msg, self()) of
         ok ->
             send_irc(Sock, Nick, "PART", [Channel], Msg),
-            {noreply, State};
+            {next_state, connected, State};
         {error, 403} ->
             send_irc(Sock, ?HOST, "403", [Nick], "No such channel!"),
-            {noreply, State};
+            {next_state, connected, State};
         {error, 442} ->
             send_irc(Sock, ?HOST, "442", [Nick], "You're not on that channel!"),
-            {noreply, State}
+            {next_state, connected, State}
     end;
-handle_cast(quit, State) ->
+connected(quit, State) ->
     {stop, quit, State}.
 
-handle_info({nick, Old, New}, State=#s{sock=Sock}) ->
-    send_irc(Sock, Old, "NICK", [], New),
-    {noreply, State};
-handle_info({privmsg, From, To, Msg}, State=#s{sock=Sock}) ->
-    send_irc(Sock, From, "PRIVMSG", [To], Msg),
-    {noreply, State};
-handle_info({join, Nick, Channel}, State=#s{sock=Sock}) ->
-    send_irc(Sock, Nick, "JOIN", [Channel], ""),
-    {noreply, State};
-handle_info({part, Nick, Channel, Msg}, State=#s{sock=Sock}) ->
-    send_irc(Sock, Nick, "PART", [Channel], Msg),
-    {noreply, State};
-handle_info({quit, Nick, Msg},State=#s{sock=Sock}) ->
-    send_irc(Sock, Nick, "QUIT", [], Msg),
-    {noreply, State}.
+handle_event(_Event, StateName, State) ->
+    {next_state, StateName, State}.
 
-terminate(_Reason, _State) ->
+handle_sync_event(_Request, _From, StateName, State) ->
+    {reply, ok, StateName, State}.
+
+handle_info({nick, Old, New}, connected, State=#s{sock=Sock}) ->
+    send_irc(Sock, Old, "NICK", [], New),
+    {next_state, connected, State};
+handle_info({privmsg, From, To, Msg}, connected, State=#s{sock=Sock}) ->
+    send_irc(Sock, From, "PRIVMSG", [To], Msg),
+    {next_state, connected, State};
+handle_info({join, Nick, Channel}, connected, State=#s{sock=Sock}) ->
+    send_irc(Sock, Nick, "JOIN", [Channel], ""),
+    {next_state, connected, State};
+handle_info({part, Nick, Channel, Msg}, connected, State=#s{sock=Sock}) ->
+    send_irc(Sock, Nick, "PART", [Channel], Msg),
+    {next_state, connected, State};
+handle_info({quit, Nick, Msg}, connected, State=#s{sock=Sock}) ->
+    send_irc(Sock, Nick, "QUIT", [], Msg),
+    {next_state, connected, State}.
+
+terminate(_Reason, _StateName, _State) ->
     ok.
 
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+code_change(_OldVsn, StateName, State, _Extra) ->
+    {ok, StateName, State}.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
