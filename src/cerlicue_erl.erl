@@ -13,6 +13,7 @@
          topic/2,
          names/2,
          part/3,
+         whois/2,
          quit/1]).
 
 %% ------------------------------------------------------------------
@@ -47,6 +48,8 @@ names(Pid, Channel) ->
     gen_fsm:sync_send_event(Pid, {names, Channel}).
 part(Pid, Channel, Msg) ->
     gen_fsm:sync_send_event(Pid, {part, Channel, Msg}).
+whois(Pid, Nick) ->
+    gen_fsm:sync_send_event(Pid, {whois, Nick}).
 quit(Pid) ->
     gen_fsm:send_event(Pid, quit).
 
@@ -90,6 +93,9 @@ connected({names, Channel}, _From, State) ->
     {reply, Reply, connected, State};
 connected({part, Channel, Msg}, _From, State) ->
     Reply = cerlicue_backend:part(Channel, Msg, self()),
+    {reply, Reply, connected, State};
+connected({whois, Nick}, _From, State) ->
+    Reply = cerlicue_backend:whois(Nick),
     {reply, Reply, connected, State}.
 
 connected(quit, State) ->
