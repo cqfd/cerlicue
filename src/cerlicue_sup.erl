@@ -21,8 +21,10 @@ start_link() ->
 init([]) ->
     MaxRestarts = 0,
     InMaxSeconds = 1,
-    ServerSpec = {cerlicue_server, {cerlicue_server, start_link, []},
-                  permanent, 5000, worker, [cerlicue_server]},
-    TcpSupSpec = {cerlicue_tcp_sup, {cerlicue_tcp_sup, start_link, []},
-                  permanent, infinity, supervisor, [cerlicue_tcp_sup]},
-    {ok, { {one_for_all, MaxRestarts, InMaxSeconds}, [ServerSpec, TcpSupSpec]} }.
+    BackendSpec = {cerlicue_backend,
+                   {cerlicue_backend, start_link, []},
+                   permanent, 5000, worker, [cerlicue_backend]},
+    IrcSupSpec = {cerlicue_irc_sup,
+                  {cerlicue_irc_sup, start_link, []},
+                  permanent, infinity, supervisor, [cerlicue_irc_sup]},
+    {ok, { {one_for_all, MaxRestarts, InMaxSeconds}, [BackendSpec, IrcSupSpec]} }.

@@ -1,38 +1,49 @@
 -module(cerlicue_parser).
 -export([parse/1, unparse/1]).
 
+parse(Msg) ->
+    clean(pedantic(Msg)).
+
 % Start by trying to parse a prefix.
-parse(":" ++ Msg) ->
+pedantic(":" ++ Msg) ->
     case string:chr(Msg, $ ) of
         0 ->
             error;
         PrefixEnd ->
             Prefix = string:substr(Msg, 1, PrefixEnd - 1),
             Rest = string:substr(Msg, PrefixEnd + 1),
-            parse(Rest, Prefix)
+            pedantic(Rest, Prefix)
     end;
-parse(Msg) ->
-    parse(Msg, "").
+pedantic(Msg) ->
+    pedantic(Msg, "").
 
 % Given a prefix, try to parse a trail.
-parse(Msg, Prefix) ->
+pedantic(Msg, Prefix) ->
     case string:str(Msg, " :") of
         0 ->
-            parse(Msg, Prefix, "");
+            pedantic(Msg, Prefix, "");
         TrailStart ->
             Trail = string:substr(Msg, TrailStart + 2),
             CommandAndArgs = string:substr(Msg, 1, TrailStart - 1),
-            parse(CommandAndArgs, Prefix, Trail)
+            pedantic(CommandAndArgs, Prefix, Trail)
     end.
 
 % Given a prefix and a trail, parse the command and the arguments.
-parse(CommandAndArgs, Prefix, Trail) ->
+pedantic(CommandAndArgs, Prefix, Trail) ->
     case string:tokens(CommandAndArgs, " ") of
         [Command|Args] ->
             {Prefix, Command, Args, Trail};
         _ ->
             error
     end.
+
+clean({"", "USER", [Nick, Mode, Unused, RealName], ""}) ->
+    {"", "USER", [Nick, Mode, Unused], RealName};
+clean({"", "PRIVMSG", [Nick, Msg], ""}) ->
+    {"", "PRIVMSG", [Nick], Msg};
+clean(Parsing) ->
+    Parsing.
+
 
 % Convert an IRC parsing back into a string.
 unparse({P, C, As, T}) ->
