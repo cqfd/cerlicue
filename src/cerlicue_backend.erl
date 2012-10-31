@@ -99,7 +99,7 @@ handle_call({nick, Nick, Pid},
             _From,
             State=#s{nicks=Nicks, pids=Pids, channels=Channels}) ->
     case dict:find(Nick, Nicks) of
-        {ok, _OtherPid} ->
+        {ok, #client{}} ->
             {reply, errno(433), State};
         error ->
             case dict:find(Pid, Pids) of
@@ -108,10 +108,14 @@ handle_call({nick, Nick, Pid},
                                           Buddy ! {nick, OldNick, Nick}
                                   end,
                                   buddies(Pid, Channels)),
-                    NewNicks = dict:store(Nick, Pid, dict:erase(OldNick, Nicks));
+                    NewNicks = dict:store(Nick,
+                                          #client{pid=Pid},
+                                          dict:erase(OldNick, Nicks));
                 error ->
-                    NewNicks = dict:store(Nick, Pid, Nicks),
-                    erlang:monitor(process, Pid)
+                    erlang:monitor(process, Pid),
+                    NewNicks = dict:store(Nick,
+                                          #client{pid=Pid},
+                                          Nicks)
             end,
             NewPids = dict:store(Pid, Nick, Pids),
             {reply, ok, State#s{nicks=NewNicks, pids=NewPids}}
@@ -142,7 +146,7 @@ handle_call({privmsg, Nick, Msg, Sender},
             State=#s{nicks=Nicks, pids=Pids}) ->
     {ok, SenderNick} = dict:find(Sender, Pids),
     case dict:find(Nick, Nicks) of
-        {ok, Pid} ->
+        {ok, #client{pid=Pid}} ->
             Pid ! {privmsg, SenderNick, Nick, Msg},
             {reply, ok, State};
         error ->
