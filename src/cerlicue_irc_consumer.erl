@@ -11,7 +11,7 @@
 
 -export([start_link/1,
          nick/2,
-         user/4,
+         user/2,
          privmsg/3,
          join/2,
          part/3,
@@ -37,8 +37,8 @@ start_link(Sock) ->
     gen_fsm:start_link(?MODULE, [Sock], []).
 nick(Pid, Nick) ->
     gen_fsm:send_event(Pid, {nick, Nick}).
-user(Pid, Nick, Mode, Realname) ->
-    gen_fsm:send_event(Pid, {user, Nick, Mode, Realname}).
+user(Pid, Realname) ->
+    gen_fsm:send_event(Pid, {user, Realname}).
 privmsg(Pid, Name, Msg) ->
     gen_fsm:send_event(Pid, {privmsg, Name, Msg}).
 join(Pid, Channel) ->
@@ -84,7 +84,8 @@ connected({nick, Nick}, State=#s{sock=Sock}) ->
             send_irc(Sock, ?HOST, "433", [Nick], "Nickname already in use"),
             {next_state, connected, State}
     end;
-connected({user, Nick, _Mode, _Realname}, State=#s{sock=Sock}) ->
+connected({user, Realname}, State=#s{sock=Sock, nick=Nick}) ->
+    cerlicue_backend:user(Realname, self()),
     send_irc(Sock, ?HOST, "001", [Nick], "Welcome to cerlicue!"),
     {next_state, connected, State};
 connected({privmsg, Name, Msg}, State=#s{sock=Sock, nick=Nick}) ->

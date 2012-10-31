@@ -70,8 +70,8 @@ code_change(_OldVsn, State, _Extra) ->
 
 forward_irc_msg({_P, "NICK", [Nick], _T}, Pid) ->
     cerlicue_irc_consumer:nick(Pid, Nick);
-forward_irc_msg({_P, "USER", [Nick, Mode, _Unused], RealName}, Pid) ->
-    cerlicue_irc_consumer:user(Pid, Nick, Mode, RealName);
+forward_irc_msg({_P, "USER", [_Nick, _Mode, _Unused], RealName}, Pid) ->
+    cerlicue_irc_consumer:user(Pid, RealName);
 forward_irc_msg({_P, "PRIVMSG", [Nick], Msg}, Pid) ->
     cerlicue_irc_consumer:privmsg(Pid, Nick, Msg);
 forward_irc_msg({_P, "JOIN", [Channel], _T}, Pid) ->
