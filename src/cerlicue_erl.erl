@@ -7,6 +7,7 @@
 
 -export([start_link/0,
          nick/2,
+         user/2,
          privmsg/3,
          join/2,
          topic/2,
@@ -22,6 +23,7 @@
          terminate/3, code_change/4]).
 
 -export([awaiting_nick/3,
+         awaiting_user/3,
          connected/2,
          connected/3]).
 
@@ -33,6 +35,8 @@ start_link() ->
     gen_fsm:start_link(?MODULE, [], []).
 nick(Pid, Nick) ->
     gen_fsm:sync_send_event(Pid, {nick, Nick}).
+user(Pid, Realname) ->
+    gen_fsm:sync_send_event(Pid, {user, Realname}).
 privmsg(Pid, Name, Msg) ->
     gen_fsm:sync_send_event(Pid, {privmsg, Name, Msg}).
 join(Pid, Channel) ->
@@ -56,14 +60,18 @@ init([]) ->
 awaiting_nick({nick, Nick}, _From, State) ->
     case cerlicue_backend:nick(Nick, self()) of
         ok ->
-            {reply, ok, connected, State};
-        {error, 432} ->
-            {reply, {error, bad_nick}, awaiting_nick, State};
-        {error, 433} ->
-            {reply, {error, nick_taken}, awaiting_nick, State}
+            {reply, ok, awaiting_user, State};
+        Error ->
+            {reply, Error, awaiting_nick, State}
     end;
 awaiting_nick(_Req, _From, State) ->
-    {reply, {error, register_first}, awaiting_nick, State}.
+    {reply, {error, 451}, awaiting_nick, State}.
+
+awaiting_user({user, Realname}, _From, State) ->
+    cerlicue_backend:user(Realname, self()),
+    {reply, ok, connected, State};
+awaiting_user(_Req, _From, State) ->
+    {reply, {error, 451}, awaiting_user, State}.
 
 connected({nick, Nick}, _From, State) ->
     Reply = cerlicue_backend:nick(Nick, self()),
