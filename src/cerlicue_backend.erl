@@ -83,6 +83,8 @@ names(Channel) ->
 part(Channel, Msg, Client) ->
     gen_server:call(?SERVER, {part, Channel, Msg, Client}).
 
+% {ok, Realname, Channels}
+% {error, 401} (no such nick)
 whois(Nick) ->
     gen_server:call(?SERVER, {whois, Nick}).
 
@@ -224,6 +226,15 @@ handle_call({part, Channel, Msg, Client},
             end;
         error ->
             {reply, errno(403), State}
+    end;
+
+handle_call({whois, Nick}, _From, State) ->
+    case dict:find(Nick, State#s.nicks) of
+        {ok, #client{pid=Pid, realname=Realname}} ->
+            Channels = channels_containing(Pid, State#s.channels),
+            {reply, {ok, Realname, Channels}, State};
+        error ->
+            {reply, errno(401), State}
     end.
 
 handle_cast(_Msg, State) ->
@@ -264,6 +275,18 @@ buddies(Pid, Channels) ->
                     sets:new(),
                     Channels),
     sets:to_list(Set).
+
+channels_containing(Pid, Channels) ->
+    dict:fold(fun(ChannelName, Clients, Acc) ->
+                      case lists:member(Pid, Clients) of
+                          true ->
+                              [ChannelName|Acc];
+                          false ->
+                              Acc
+                      end
+              end,
+              [],
+              Channels).
 
 remove_client(Client, Channels) ->
     dict:fold(fun(ChannelName, Clients, Acc) ->
