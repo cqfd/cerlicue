@@ -93,21 +93,21 @@ handle_event(_Event, StateName, State) ->
 handle_sync_event(_Event, _From, StateName, State) ->
     {reply, ok, StateName, State}.
 
-handle_info({nick, Old, New}, StateName, State) ->
+handle_info({nick, Old, New}, connected, State) ->
     io:format("~p changed their nick to ~p~n", [Old, New]),
-    {next_state, StateName, State};
-handle_info({privmsg, From, To, Msg}, StateName, State) ->
+    {next_state, connected, State};
+handle_info({privmsg, From, To, Msg}, connected, State) ->
     io:format("~p --> ~p: ~p~n", [From, To, Msg]),
-    {next_state, StateName, State};
-handle_info({join, Nick, Channel}, StateName, State) ->
+    {next_state, connected, State};
+handle_info({join, Nick, Channel}, connected, State) ->
     io:format("~p joined ~p~n", [Nick, Channel]),
-    {next_state, StateName, State};
-handle_info({part, Nick, Channel, Msg}, StateName, State) ->
+    {next_state, connected, State};
+handle_info({part, Nick, Channel, Msg}, connected, State) ->
     io:format("~p departed ~p: ~p~n", [Nick, Channel, Msg]),
-    {next_state, StateName, State};
-handle_info({quit, Nick, Msg}, StateName, State) ->
+    {next_state, connected, State};
+handle_info({quit, Nick, Msg}, connected, State) ->
     io:format("~p quit: ~p~n", [Nick, Msg]),
-    {next_state, StateName, State}.
+    {next_state, connected, State}.
 
 terminate(_Reason, _StateName, _State) ->
     ok.
