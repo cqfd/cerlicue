@@ -21,7 +21,8 @@
 -export([init/1, handle_event/3, handle_sync_event/4, handle_info/3,
          terminate/3, code_change/4]).
 
--export([connected/2,
+-export([awaiting_nick/3,
+         connected/2,
          connected/3]).
 
 %% ------------------------------------------------------------------
@@ -50,7 +51,19 @@ quit(Pid) ->
 %% ------------------------------------------------------------------
 
 init([]) ->
-    {ok, connected, []}.
+    {ok, awaiting_nick, []}.
+
+awaiting_nick({nick, Nick}, _From, State) ->
+    case cerlicue_backend:nick(Nick, self()) of
+        ok ->
+            {reply, ok, connected, State};
+        {error, 432} ->
+            {reply, {error, bad_nick}, awaiting_nick, State};
+        {error, 433} ->
+            {reply, {error, nick_taken}, awaiting_nick, State}
+    end;
+awaiting_nick(_Req, _From, State) ->
+    {reply, {error, register_first}, awaiting_nick, State}.
 
 connected({nick, Nick}, _From, State) ->
     Reply = cerlicue_backend:nick(Nick, self()),
