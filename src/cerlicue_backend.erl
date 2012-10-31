@@ -18,7 +18,7 @@
 
 -export([start_link/0,
          nick/2,
-         user/4,
+         user/2,
          privmsg/3,
          join/2,
          part/3,
@@ -50,8 +50,8 @@ nick(Nick, Pid) ->
 
 % ok
 % {error, 462} (already registered)
-user(Nick, Mode, Realname, Pid) ->
-    gen_server:call(?SERVER, {user, Nick, Mode, Realname, Pid}).
+user(Realname, Pid) ->
+    gen_server:call(?SERVER, {user, Realname, Pid}).
 
 % ok
 % {error, 401} (no such nick)
@@ -120,6 +120,14 @@ handle_call({nick, Nick, Pid},
             NewPids = dict:store(Pid, Nick, Pids),
             {reply, ok, State#s{nicks=NewNicks, pids=NewPids}}
     end;
+
+handle_call({user, Realname, Pid}, _From, State) ->
+    {ok, Nick} = dict:find(Pid, State#s.pids),
+    {ok, Client=#client{}} =  dict:find(Nick, State#s.nicks),
+    NewNicks = dict:store(Nick,
+                          Client#client{realname=Realname},
+                          State#s.nicks),
+    {reply, ok, State#s{nicks=NewNicks}};
 
 % ok
 % {error, 403} (no such channel)
