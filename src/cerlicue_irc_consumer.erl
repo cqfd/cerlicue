@@ -27,6 +27,7 @@
          terminate/3, code_change/4]).
 
 -export([awaiting_nick/2,
+         awaiting_user/2,
          connected/2]).
 
 %% ------------------------------------------------------------------
@@ -64,7 +65,7 @@ init([Sock]) ->
 awaiting_nick({nick, Nick}, State=#s{sock=Sock}) ->
     case cerlicue_backend:nick(Nick, self()) of
         ok ->
-            {next_state, connected, State#s{nick=Nick}};
+            {next_state, awaiting_user, State#s{nick=Nick}};
         {error, 432} ->
             send_irc(Sock, ?HOST, "432", [Nick], "Nickname invalid"),
             {next_state, awaiting_nick, State};
@@ -73,8 +74,16 @@ awaiting_nick({nick, Nick}, State=#s{sock=Sock}) ->
             {next_state, awaiting_nick, State}
     end;
 awaiting_nick(_Req, State=#s{sock=Sock}) ->
-    send_irc(Sock, ?HOST, "451", ["*"], "Register first!"),
+    send_irc(Sock, ?HOST, "451", ["*"], "Finish registering first!"),
     {next_state, awaiting_nick, State}.
+
+awaiting_user({user, Realname}, State=#s{sock=Sock, nick=Nick}) ->
+    cerlicue_backend:user(Realname, self()),
+    send_irc(Sock, ?HOST, "001", [Nick], "Welcome to cerlicue!"),
+    {next_state, connected, State};
+awaiting_user(_Req, State=#s{sock=Sock}) ->
+    send_irc(Sock, ?HOST, "451", ["*"], "Finish registering first!"),
+    {next_state, awaiting_user, State}.
 
 connected({nick, Nick}, State=#s{sock=Sock}) ->
     case cerlicue_backend:nick(Nick, self()) of
@@ -84,10 +93,7 @@ connected({nick, Nick}, State=#s{sock=Sock}) ->
             send_irc(Sock, ?HOST, "433", [Nick], "Nickname already in use"),
             {next_state, connected, State}
     end;
-connected({user, Realname}, State=#s{sock=Sock, nick=Nick}) ->
-    cerlicue_backend:user(Realname, self()),
-    send_irc(Sock, ?HOST, "001", [Nick], "Welcome to cerlicue!"),
-    {next_state, connected, State};
+
 connected({privmsg, Name, Msg}, State=#s{sock=Sock, nick=Nick}) ->
     case cerlicue_backend:privmsg(Name, Msg, self()) of
         ok ->
