@@ -64,6 +64,9 @@ privmsg(Nick, Msg, Client) ->
 join(Channel, Client) ->
     gen_server:call(?SERVER, {join, Channel, Client}).
 
+part(Channel, Msg, Client) ->
+    gen_server:call(?SERVER, {part, Channel, Msg, Client}).
+
 % {ok, Topic, Setter, AtTime}
 % {error, 331} (no topic set)
 % {error, 403} (no such channel)
@@ -79,9 +82,6 @@ topic(Channel, NewTopic) ->
 
 names(Channel) ->
     gen_server:call(?SERVER, {names, Channel}).
-
-part(Channel, Msg, Client) ->
-    gen_server:call(?SERVER, {part, Channel, Msg, Client}).
 
 % {ok, Realname, Channels}
 % {error, 401} (no such nick)
@@ -182,27 +182,6 @@ handle_call({join, Channel, Client},
     Nicks = [SenderNick|[dict:fetch(C, Pids) || C <- Clients]],
     {reply, {ok, Nicks}, State#s{channels=NewChannels}};
 
-% {ok, Topic}
-% {error, 403} (no such channel)
-handle_call({topic, Channel}, _From, State=#s{channels=Channels}) ->
-    case dict:find(Channel, Channels) of
-        {ok, _Clients} ->
-            {reply, {ok, "fun topic"}, State};
-        error ->
-            {reply, errno(403), State}
-    end;
-
-% {ok, Nicks}
-% {error, 403} (no such channel)
-handle_call({names, Channel}, _From, State=#s{channels=Channels, pids=Pids}) ->
-    case dict:find(Channel, Channels) of
-        {ok, Clients} ->
-            Names = [dict:fetch(C, Pids) || C <- Clients],
-            {reply, {ok, Names}, State};
-        error ->
-            {reply, errno(403), State}
-    end;
-
 % ok
 % {error, 403} (no such channel)
 % {error, 442} (you're not on that channel)
@@ -224,6 +203,27 @@ handle_call({part, Channel, Msg, Client},
                 false ->
                     {reply, errno(442), State}
             end;
+        error ->
+            {reply, errno(403), State}
+    end;
+
+% {ok, Topic}
+% {error, 403} (no such channel)
+handle_call({topic, Channel}, _From, State=#s{channels=Channels}) ->
+    case dict:find(Channel, Channels) of
+        {ok, _Clients} ->
+            {reply, {ok, "fun topic"}, State};
+        error ->
+            {reply, errno(403), State}
+    end;
+
+% {ok, Nicks}
+% {error, 403} (no such channel)
+handle_call({names, Channel}, _From, State=#s{channels=Channels, pids=Pids}) ->
+    case dict:find(Channel, Channels) of
+        {ok, Clients} ->
+            Names = [dict:fetch(C, Pids) || C <- Clients],
+            {reply, {ok, Names}, State};
         error ->
             {reply, errno(403), State}
     end;

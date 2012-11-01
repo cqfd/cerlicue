@@ -103,6 +103,18 @@ connected({join, Channel}, State=#s{sock=Sock, nick=Nick}) ->
     cerlicue_backend:join(Channel, self()),
     send_irc(Sock, Nick, "JOIN", [Channel], ""),
     {next_state, connected, State};
+connected({part, Nick, Channel, Msg}, State=#s{sock=Sock}) ->
+    case cerlicue_backend:part(Channel, Msg, self()) of
+        ok ->
+            send_irc(Sock, Nick, "PART", [Channel], Msg),
+            {next_state, connected, State};
+        {error, 403} ->
+            send_irc(Sock, ?HOST, "403", [Nick], "No such channel!"),
+            {next_state, connected, State};
+        {error, 442} ->
+            send_irc(Sock, ?HOST, "442", [Nick], "You're not on that channel!"),
+            {next_state, connected, State}
+    end;
 connected({topic, Channel}, State=#s{sock=Sock, nick=Nick}) ->
     case cerlicue_backend:topic(Channel) of
         {ok, Topic} ->
@@ -120,18 +132,6 @@ connected({names, Channel}, State=#s{sock=Sock, nick=Nick}) ->
             {next_state, connected, State};
         {error, 403} ->
             send_irc(Sock, ?HOST, "403", [Channel], "No such channel!"),
-            {next_state, connected, State}
-    end;
-connected({part, Nick, Channel, Msg}, State=#s{sock=Sock}) ->
-    case cerlicue_backend:part(Channel, Msg, self()) of
-        ok ->
-            send_irc(Sock, Nick, "PART", [Channel], Msg),
-            {next_state, connected, State};
-        {error, 403} ->
-            send_irc(Sock, ?HOST, "403", [Nick], "No such channel!"),
-            {next_state, connected, State};
-        {error, 442} ->
-            send_irc(Sock, ?HOST, "442", [Nick], "You're not on that channel!"),
             {next_state, connected, State}
     end;
 connected(quit, State) ->
